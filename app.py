@@ -1,5 +1,7 @@
 import time
 import hashlib
+import json
+from random import randint
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization as crypto_serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
@@ -22,6 +24,7 @@ class Transaction:
         return str(vars(self))
 
 class Block:
+    nonce = randint(0,999999999)
     def __init__(self, prevHash, transaction):
         self.prevHash = prevHash
         self.transaction = transaction
@@ -33,6 +36,9 @@ class Block:
         hashObject = hashlib.sha1(strObject).hexdigest()
         return hashObject
 
+    def __str__(self):
+        return str(vars(self))
+
 class Chain(metaclass=Singleton):
     def __init__(self):
         self.chain = [Block(None,Transaction(100, 'genesis', 'satoshi'))]
@@ -40,13 +46,34 @@ class Chain(metaclass=Singleton):
     def getLastBlock(self):
         return self.chain[-1]
     
-    def addBlock(self, transaction, senderPublicKey, senderPublicKeyObject, signature):
-        verifier = False
+    def addBlock(self, transaction, senderPublicKey, signature):
+        isValid = False
         try:
-            senderPublicKeyObject.verify(signature, transaction, padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
-            verifier = True
+            senderPublicKey.verify(signature, transaction.__str__().encode('utf-8'), padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
+            isValid = True
         except InvalidSignature:
-            verifier = False
+            isValid = False
+        finally:
+            if isValid:
+                newBlock = Block(self.getLastBlock().getHash(), transaction)
+                self.mine(newBlock.nonce)
+                self.chain.append(newBlock)
+
+    def mine(self, nonce):
+        solution = 1
+        print('⛏ mining')
+        while True:
+            hashNum = hashlib.md5(str(nonce+solution).encode('utf-8')).hexdigest()
+            if hashNum[:4] == '0000':
+                return solution
+            solution+=1
+    
+    def __str__(self):
+        strChain = []
+        for block in self.chain:
+            strBlock = {"prevHash":block.prevHash, "transaction":block.transaction.__str__(), "ts":block.ts}
+            strChain.append(strBlock)
+        return str(strChain)
         
 
 class Wallet:
@@ -72,6 +99,15 @@ class Wallet:
     def sendMoney(self, amount, payeePublicKey):
         transaction = Transaction(amount, self.publicKey, payeePublicKey)
         signature = self.key.sign(transaction.__str__().encode('utf-8'), padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
-        Chain.addBlock(transaction, self.publicKey, self.publicKeyObject, payeePublicKey)
-w = Wallet()
-w.sendMoney(100)
+        chain.addBlock(transaction, self.publicKeyObject, signature)
+
+chain = Chain()
+satoshi = Wallet()
+bob = Wallet()
+alice = Wallet()
+
+satoshi.sendMoney(50, satoshi.publicKey)
+bob.sendMoney(23, alice.publicKey)
+alice.sendMoney(5, bob.publicKey)
+
+print(chain)
